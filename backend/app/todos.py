@@ -3,7 +3,7 @@ import sqlite3
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 from pydantic import AfterValidator, BaseModel, Field, StrictStr, StringConstraints
 
 from app.db import connect
@@ -78,8 +78,27 @@ def _check_category(conn: sqlite3.Connection, category_id: int | None) -> None:
 
 
 @router.get("")
-def list_todos(conn: Conn) -> list[Todo]:
-    rows = conn.execute(f"SELECT {COLUMNS} FROM todos ORDER BY due_date IS NULL, due_date, id").fetchall()
+def list_todos(
+    conn: Conn,
+    status: Literal["all", "active", "done"] = "all",
+    category_id: Annotated[int | None, Query(ge=1, le=2**63 - 1)] = None,
+    priority: Priority | None = None,
+) -> list[Todo]:
+    # เงื่อนไขเป็นข้อความคงที่ ค่าส่งผ่าน placeholder เท่านั้น
+    where, params = [], []
+    if status != "all":
+        where.append("done = ?")
+        params.append(status == "done")
+    if category_id is not None:
+        where.append("category_id = ?")
+        params.append(category_id)
+    if priority is not None:
+        where.append("priority = ?")
+        params.append(priority)
+    clause = f" WHERE {' AND '.join(where)}" if where else ""
+    rows = conn.execute(
+        f"SELECT {COLUMNS} FROM todos{clause} ORDER BY due_date IS NULL, due_date, id", params
+    ).fetchall()
     return [Todo(**r) for r in rows]
 
 

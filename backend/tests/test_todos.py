@@ -185,3 +185,51 @@ def test_concurrent_requests_all_succeed(tmp_path):
     finally:
         server.terminate()
         server.wait()
+
+
+def _filter_data(client):
+    c = client.post("/api/categories", json={"name": "งาน"}).json()["id"]
+    rows = [("a", "high", c, False), ("b", "high", None, True), ("c", "low", c, True), ("d", "medium", c, False)]
+    for title, prio, cat, done in rows:
+        t = client.post("/api/todos", json={"title": title, "priority": prio, "category_id": cat}).json()
+        if done:
+            client.patch(f"/api/todos/{t['id']}", json={"done": True})
+    return c
+
+
+def _titles(client, query):
+    r = client.get(f"/api/todos{query}")
+    assert r.status_code == 200
+    return [t["title"] for t in r.json()]
+
+
+def test_filter_status_active_done_all(client):
+    _filter_data(client)
+    assert _titles(client, "?status=active") == ["a", "d"]
+    assert _titles(client, "?status=done") == ["b", "c"]
+    assert _titles(client, "?status=all") == _titles(client, "") == ["a", "b", "c", "d"]
+
+
+def test_filter_category(client):
+    c = _filter_data(client)
+    assert _titles(client, f"?category_id={c}") == ["a", "c", "d"]
+
+
+def test_filter_priority(client):
+    _filter_data(client)
+    assert _titles(client, "?priority=high") == ["a", "b"]
+
+
+def test_filter_combined(client):
+    c = _filter_data(client)
+    assert _titles(client, f"?status=active&priority=high&category_id={c}") == ["a"]
+
+
+@pytest.mark.parametrize("query", ["?status=xxx", "?priority=xxx", "?category_id=abc", "?category_id=99999999999999999999"])
+def test_filter_invalid_values_422(client, query):
+    assert client.get(f"/api/todos{query}").status_code == 422
+
+
+def test_filter_unknown_category_empty(client):
+    _filter_data(client)
+    assert _titles(client, "?category_id=999") == []
