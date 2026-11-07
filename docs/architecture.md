@@ -1,5 +1,5 @@
 branch: plan/todo-web
-plan: draft
+plan: approved
 checkpoint: F1 pending
 qa: yes
 security: yes
