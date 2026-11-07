@@ -78,7 +78,7 @@ test.describe("F1 web", () => {
   test("add todo shows in list and survives reload", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("ชื่องาน").fill("e2e เพิ่ม");
-    await page.getByRole("button", { name: "เพิ่ม" }).click();
+    await page.getByRole("button", { name: "เพิ่ม", exact: true }).click();
     await expect(page.getByText("e2e เพิ่ม")).toBeVisible();
     await page.reload();
     await expect(page.getByText("e2e เพิ่ม")).toBeVisible();
@@ -87,7 +87,7 @@ test.describe("F1 web", () => {
   test("toggle done shows done and survives reload", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("ชื่องาน").fill("e2e ติ๊ก");
-    await page.getByRole("button", { name: "เพิ่ม" }).click();
+    await page.getByRole("button", { name: "เพิ่ม", exact: true }).click();
     const row = page.getByRole("listitem").filter({ hasText: "e2e ติ๊ก" });
     await row.getByRole("checkbox").click();
     await expect(row.getByRole("checkbox")).toBeChecked();
@@ -104,7 +104,7 @@ test.describe("F1 web", () => {
   test("edit title survives reload", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("ชื่องาน").fill("e2e ชื่อเก่า");
-    await page.getByRole("button", { name: "เพิ่ม" }).click();
+    await page.getByRole("button", { name: "เพิ่ม", exact: true }).click();
     await page.getByRole("listitem").filter({ hasText: "e2e ชื่อเก่า" }).getByRole("button", { name: "แก้ไข" }).click();
     const input = page.getByLabel("แก้ชื่อ e2e ชื่อเก่า");
     await input.fill("e2e ชื่อใหม่");
@@ -118,7 +118,7 @@ test.describe("F1 web", () => {
   test("delete removes todo and stays removed after reload", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("ชื่องาน").fill("e2e ลบ");
-    await page.getByRole("button", { name: "เพิ่ม" }).click();
+    await page.getByRole("button", { name: "เพิ่ม", exact: true }).click();
     await page.getByRole("listitem").filter({ hasText: "e2e ลบ" }).getByRole("button", { name: "ลบ" }).click();
     await expect(page.getByText("e2e ลบ")).toHaveCount(0);
     await page.reload();
@@ -127,7 +127,7 @@ test.describe("F1 web", () => {
 
   test("empty or whitespace title cannot be added", async ({ page }) => {
     await page.goto("/");
-    const add = page.getByRole("button", { name: "เพิ่ม" });
+    const add = page.getByRole("button", { name: "เพิ่ม", exact: true });
     await expect(add).toBeDisabled();
     await page.getByLabel("ชื่องาน").fill("   ");
     await expect(add).toBeDisabled();
@@ -136,7 +136,7 @@ test.describe("F1 web", () => {
   test("editing title to empty shows error and keeps old title", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("ชื่องาน").fill("e2e แก้ว่าง");
-    await page.getByRole("button", { name: "เพิ่ม" }).click();
+    await page.getByRole("button", { name: "เพิ่ม", exact: true }).click();
     await page.getByRole("listitem").filter({ hasText: "e2e แก้ว่าง" }).getByRole("button", { name: "แก้ไข" }).click();
     await page.getByLabel("แก้ชื่อ e2e แก้ว่าง").fill("");
     await page.getByRole("button", { name: "บันทึก" }).click();

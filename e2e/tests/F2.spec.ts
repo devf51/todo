@@ -79,7 +79,7 @@ test.describe("F2 web", () => {
     await page.getByLabel("ชื่องาน").fill("w-add");
     await page.getByLabel("วันกำหนดส่ง").fill("2096-03-04");
     await page.getByLabel("ความสำคัญ").selectOption("high");
-    await page.getByRole("button", { name: "เพิ่ม" }).click();
+    await page.getByRole("button", { name: "เพิ่ม", exact: true }).click();
     const row = () => page.getByRole("listitem").filter({ hasText: "w-add" });
     await expect(row()).toContainText("2096-03-04");
     await expect(row()).toContainText("สูง");
@@ -91,7 +91,7 @@ test.describe("F2 web", () => {
   test("add without choosing shows medium and no due date", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("ชื่องาน").fill("w-default");
-    await page.getByRole("button", { name: "เพิ่ม" }).click();
+    await page.getByRole("button", { name: "เพิ่ม", exact: true }).click();
     const row = page.getByRole("listitem").filter({ hasText: "w-default" });
     await expect(row).toContainText("ปานกลาง");
     await expect(row).not.toContainText("ครบกำหนด");
@@ -100,7 +100,7 @@ test.describe("F2 web", () => {
   test("edit due date and priority, then clear due date, survives reload", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("ชื่องาน").fill("w-edit");
-    await page.getByRole("button", { name: "เพิ่ม" }).click();
+    await page.getByRole("button", { name: "เพิ่ม", exact: true }).click();
     const row = () => page.getByRole("listitem").filter({ hasText: "w-edit" });
     // ตอนแก้ ชื่ออยู่ใน input ไม่ใช่ข้อความ จึงหา li จากช่องแก้ชื่อ
     const editing = () => page.getByRole("listitem").filter({ has: page.getByLabel("แก้ชื่อ w-edit") });
