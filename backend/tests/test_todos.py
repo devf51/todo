@@ -149,3 +149,39 @@ def test_list_sorted_by_due_date_nulls_last(client):
     for title, due in [("none", None), ("late", "2027-01-01"), ("soon", "2026-01-01"), ("soon2", "2026-01-01")]:
         add(title, due)
     assert [t["title"] for t in client.get("/api/todos").json()] == ["soon", "soon2", "late", "none"]
+
+
+def test_concurrent_requests_all_succeed(tmp_path):
+    # TestClient รันใน thread เดียว จึงไม่เจอบั๊ก connection ข้าม thread ต้องใช้ uvicorn จริง
+    import os
+    import socket
+    import subprocess
+    import sys
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    import httpx
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    env = {**os.environ, "DATABASE_PATH": str(tmp_path / "c.db")}
+    server = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(port)],
+        env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    url = f"http://127.0.0.1:{port}/api/todos"
+    try:
+        for _ in range(100):
+            try:
+                httpx.get(url)
+                break
+            except httpx.TransportError:
+                time.sleep(0.1)
+        with httpx.Client(limits=httpx.Limits(max_connections=40)) as c, ThreadPoolExecutor(30) as ex:
+            codes = list(ex.map(lambda i: c.post(url, json={"title": f"t{i}"}).status_code, range(300)))
+        assert codes == [201] * 300
+        assert len(httpx.get(url).json()) == 300
+    finally:
+        server.terminate()
+        server.wait()
