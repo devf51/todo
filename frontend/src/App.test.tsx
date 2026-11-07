@@ -1,0 +1,142 @@
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import App from "./App";
+
+type T = { id: number; title: string; done: boolean; due_date: null; priority: "medium"; category_id: null };
+const mk = (id: number, title: string, done = false): T => ({ id, title, done, due_date: null, priority: "medium", category_id: null });
+
+let items: T[];
+let fail: { method: string; status: number; detail?: unknown } | null;
+let calls: { method: string; url: string; body?: any }[];
+
+const json = (status: number, body?: unknown) =>
+  new Response(body === undefined ? null : JSON.stringify(body), { status });
+
+beforeEach(() => {
+  items = [mk(1, "ซื้อนม"), mk(2, "ส่งงาน", true)];
+  fail = null;
+  calls = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init: RequestInit = {}) => {
+      const method = init.method ?? "GET";
+      const body = init.body ? JSON.parse(init.body as string) : undefined;
+      calls.push({ method, url, body });
+      if (fail && fail.method === method) return json(fail.status, { detail: fail.detail });
+      const id = Number(url.split("/")[3]);
+      if (method === "GET") return json(200, items);
+      if (method === "POST") {
+        const t = mk(items.length + 10, body.title);
+        items.push(t);
+        return json(201, t);
+      }
+      if (method === "PATCH") {
+        const t = items.find((i) => i.id === id)!;
+        Object.assign(t, body);
+        return json(200, t);
+      }
+      items = items.filter((i) => i.id !== id);
+      return json(204);
+    }),
+  );
+});
+afterEach(() => vi.unstubAllGlobals());
+
+describe("App", () => {
+  it("แสดง loading แล้วแสดงรายการจาก API", async () => {
+    render(<App />);
+    expect(screen.getByText("กำลังโหลด…")).toBeInTheDocument();
+    expect(await screen.findByRole("checkbox", { name: "ซื้อนม" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "ส่งงาน" })).toBeChecked();
+  });
+
+  it("โหลดไม่สำเร็จ → แสดง alert", async () => {
+    fail = { method: "GET", status: 500, detail: "server พัง" };
+    render(<App />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("server พัง");
+  });
+
+  it("ปุ่ม เพิ่ม ใช้ไม่ได้เมื่อช่องว่าง; เพิ่มสำเร็จแล้วรายการขึ้นและช่องถูกล้าง", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    const add = screen.getByRole("button", { name: "เพิ่ม" });
+    expect(add).toBeDisabled();
+    const input = screen.getByLabelText("ชื่องาน");
+    await user.type(input, "งานใหม่");
+    await user.click(add);
+    expect(await screen.findByRole("checkbox", { name: "งานใหม่" })).toBeInTheDocument();
+    expect(input).toHaveValue("");
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ title: "งานใหม่" });
+  });
+
+  it("เพิ่มแล้ว 422 → alert, รายการไม่เพิ่ม, ช่องยังมีค่า", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    fail = { method: "POST", status: 422, detail: "title ยาวเกิน" };
+    await user.type(screen.getByLabelText("ชื่องาน"), "x");
+    await user.click(screen.getByRole("button", { name: "เพิ่ม" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("title ยาวเกิน");
+    expect(screen.getByLabelText("ชื่องาน")).toHaveValue("x");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("ติ๊กส่ง PATCH done:true แล้วแสดงว่าเสร็จ; ยกเลิกติ๊กได้", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const box = await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    await user.click(box);
+    expect(await screen.findByRole("checkbox", { name: "ซื้อนม", checked: true })).toBeInTheDocument();
+    expect(calls.find((c) => c.method === "PATCH")).toMatchObject({ url: "/api/todos/1", body: { done: true } });
+    await user.click(screen.getByRole("checkbox", { name: "ซื้อนม" }));
+    expect(await screen.findByRole("checkbox", { name: "ซื้อนม", checked: false })).toBeInTheDocument();
+  });
+
+  it("ติ๊กแล้ว server ตอบ error → ยังไม่เปลี่ยน และมี alert", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const box = await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    fail = { method: "PATCH", status: 500, detail: "พัง" };
+    await user.click(box);
+    expect(await screen.findByRole("alert")).toHaveTextContent("พัง");
+    expect(screen.getByRole("checkbox", { name: "ซื้อนม" })).not.toBeChecked();
+  });
+
+  it("แก้ชื่อแล้ว บันทึก → ชื่อใหม่", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    const li = screen.getAllByRole("listitem")[0];
+    await user.click(within(li).getByRole("button", { name: "แก้ไข" }));
+    const edit = within(li).getByRole("textbox");
+    await user.clear(edit);
+    await user.type(edit, "ซื้อไข่");
+    await user.click(within(li).getByRole("button", { name: "บันทึก" }));
+    expect(await screen.findByRole("checkbox", { name: "ซื้อไข่" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "ซื้อนม" })).not.toBeInTheDocument();
+  });
+
+  it("แก้ชื่อแล้ว 422 → alert และช่องแก้ยังอยู่พร้อมค่าที่พิมพ์", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    const li = screen.getAllByRole("listitem")[0];
+    await user.click(within(li).getByRole("button", { name: "แก้ไข" }));
+    fail = { method: "PATCH", status: 422, detail: "ชื่อว่าง" };
+    await user.type(within(li).getByRole("textbox"), "!");
+    await user.click(within(li).getByRole("button", { name: "บันทึก" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("ชื่อว่าง");
+    expect(within(li).getByRole("textbox")).toHaveValue("ซื้อนม!");
+  });
+
+  it("ลบ → รายการหาย", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    await user.click(within(screen.getAllByRole("listitem")[0]).getByRole("button", { name: "ลบ" }));
+    await vi.waitFor(() => expect(screen.queryByRole("checkbox", { name: "ซื้อนม" })).not.toBeInTheDocument());
+    expect(calls.find((c) => c.method === "DELETE")?.url).toBe("/api/todos/1");
+  });
+});
