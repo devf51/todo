@@ -78,7 +78,7 @@ test.describe("F2 web", () => {
     await page.goto("/");
     await page.getByLabel("ชื่องาน").fill("w-add");
     await page.getByLabel("วันกำหนดส่ง").fill("2096-03-04");
-    await page.getByLabel("ความสำคัญ").selectOption("high");
+    await page.getByLabel("ความสำคัญ", { exact: true }).selectOption("high");
     await page.getByRole("button", { name: "เพิ่ม", exact: true }).click();
     const row = () => page.getByRole("listitem").filter({ hasText: "w-add" });
     await expect(row()).toContainText("2096-03-04");
@@ -106,7 +106,7 @@ test.describe("F2 web", () => {
     const editing = () => page.getByRole("listitem").filter({ has: page.getByLabel("แก้ชื่อ w-edit") });
     await row().getByRole("button", { name: "แก้ไข" }).click();
     await editing().getByLabel("วันกำหนดส่ง").fill("2095-07-08");
-    await editing().getByLabel("ความสำคัญ").selectOption("low");
+    await editing().getByLabel("ความสำคัญ", { exact: true }).selectOption("low");
     await editing().getByRole("button", { name: "บันทึก" }).click();
     await expect(row()).toContainText("2095-07-08");
     await expect(row()).toContainText("ต่ำ");
