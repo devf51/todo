@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, createTodo, deleteTodo, listTodos, updateTodo } from "./api";
+import {
+  ApiError, createCategory, createTodo, deleteCategory, deleteTodo, listCategories, listTodos, renameCategory, updateTodo,
+} from "./api";
 
 const todo = { id: 1, title: "a", done: false, due_date: null, priority: "medium", category_id: null };
 
@@ -63,5 +65,40 @@ describe("api", () => {
   it("body ไม่ใช่ JSON (500) → ข้อความทั่วไป", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("oops", { status: 500 })));
     await expect(listTodos()).rejects.toMatchObject({ status: 500 });
+  });
+
+  it("listCategories GET /api/categories", async () => {
+    const f = mockFetch(200, [{ id: 1, name: "งาน" }]);
+    expect(await listCategories()).toEqual([{ id: 1, name: "งาน" }]);
+    expect(f.mock.calls[0][0]).toBe("/api/categories");
+  });
+
+  it("createCategory POST {name}", async () => {
+    const f = mockFetch(201, { id: 1, name: "งาน" });
+    await createCategory("งาน");
+    const [url, init] = f.mock.calls[0];
+    expect([url, init.method, init.body]).toEqual(["/api/categories", "POST", '{"name":"งาน"}']);
+  });
+
+  it("renameCategory PATCH /api/categories/{id}", async () => {
+    const f = mockFetch(200, { id: 2, name: "ใหม่" });
+    await renameCategory(2, "ใหม่");
+    const [url, init] = f.mock.calls[0];
+    expect([url, init.method, init.body]).toEqual(["/api/categories/2", "PATCH", '{"name":"ใหม่"}']);
+  });
+
+  it("deleteCategory DELETE และรับ 204", async () => {
+    const f = mockFetch(204);
+    await expect(deleteCategory(2)).resolves.toBeUndefined();
+    expect([f.mock.calls[0][0], f.mock.calls[0][1].method]).toEqual(["/api/categories/2", "DELETE"]);
+  });
+
+  it("createTodo / updateTodo ส่ง category_id (รวม null)", async () => {
+    const f = vi.fn(async (_u: string, _i?: RequestInit) => new Response(JSON.stringify(todo), { status: 200 }));
+    vi.stubGlobal("fetch", f);
+    await createTodo({ title: "a", category_id: 3 });
+    expect(f.mock.calls[0][1]?.body).toBe('{"title":"a","category_id":3}');
+    await updateTodo(1, { category_id: null });
+    expect(f.mock.calls[1][1]?.body).toBe('{"category_id":null}');
   });
 });

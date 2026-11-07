@@ -8,11 +8,13 @@ button { padding: 0.45rem 0.9rem; border: 0; border-radius: 6px; background: #2f
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 button:focus-visible, input:focus-visible { outline: 3px solid #e0a82e; outline-offset: 2px; }
 ul { list-style: none; padding: 0; margin: 0; }
-li { display: flex; gap: 0.5rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid #ddd8cb; }
+li, .cat { display: flex; gap: 0.5rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid #ddd8cb; }
 li > label { flex: 1; display: flex; gap: 0.6rem; align-items: center; }
 li.done span { text-decoration: line-through; color: #7b8794; }
 [role="alert"] { padding: 0.6rem 0.9rem; border-radius: 6px; background: #fde8e6; color: #8a1c13; }
 .row { flex-wrap: wrap; }
 input[type="date"], select { padding: 0.45rem 0.6rem; border: 1px solid #b8b2a3; border-radius: 6px; font: inherit; background: #fff; }
-li { flex-wrap: wrap; }
+li, .cat { flex-wrap: wrap; }
 li small { color: #5b6670; }
+section { margin: 1.5rem 0; }
+h2 { font-size: 1.1rem; }

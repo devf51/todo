@@ -1,12 +1,13 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
-type T = { id: number; title: string; done: boolean; due_date: string | null; priority: "low" | "medium" | "high"; category_id: null };
+type T = { id: number; title: string; done: boolean; due_date: string | null; priority: "low" | "medium" | "high"; category_id: number | null };
 const mk = (id: number, title: string, done = false, extra: Partial<T> = {}): T => ({ id, title, done, due_date: null, priority: "medium", category_id: null, ...extra });
 
 let items: T[];
+let cats: { id: number; name: string }[];
 let fail: { method: string; status: number; detail?: unknown } | null;
 let calls: { method: string; url: string; body?: any }[];
 
@@ -15,6 +16,7 @@ const json = (status: number, body?: unknown) =>
 
 beforeEach(() => {
   items = [mk(1, "ซื้อนม"), mk(2, "ส่งงาน", true, { due_date: "2026-12-01", priority: "high" })];
+  cats = [{ id: 1, name: "งาน" }];
   fail = null;
   calls = [];
   vi.stubGlobal(
@@ -24,10 +26,26 @@ beforeEach(() => {
       const body = init.body ? JSON.parse(init.body as string) : undefined;
       calls.push({ method, url, body });
       if (fail && fail.method === method) return json(fail.status, { detail: fail.detail });
+      if (url.startsWith("/api/categories")) {
+        const cid = Number(url.split("/")[3]);
+        if (method === "GET") return json(200, cats);
+        if (method === "POST") {
+          cats.push({ id: 5, name: body.name });
+          return json(201, cats.at(-1));
+        }
+        if (method === "PATCH") {
+          const c = cats.find((x) => x.id === cid)!;
+          c.name = body.name;
+          return json(200, c);
+        }
+        cats = cats.filter((x) => x.id !== cid);
+        items.forEach((i) => { if (i.category_id === cid) i.category_id = null; });
+        return json(204);
+      }
       const id = Number(url.split("/")[3]);
       if (method === "GET") return json(200, items);
       if (method === "POST") {
-        const t = mk(items.length + 10, body.title, false, { due_date: body.due_date ?? null, priority: body.priority ?? "medium" });
+        const t = mk(items.length + 10, body.title, false, { due_date: body.due_date ?? null, priority: body.priority ?? "medium", category_id: body.category_id ?? null });
         items.push(t);
         return json(201, t);
       }
@@ -159,7 +177,7 @@ describe("App", () => {
     await user.selectOptions(screen.getByLabelText("ความสำคัญ"), "high");
     await user.click(screen.getByRole("button", { name: "เพิ่ม" }));
     const box = await screen.findByRole("checkbox", { name: "งานด่วน" });
-    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ title: "งานด่วน", due_date: "2026-11-10", priority: "high" });
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ title: "งานด่วน", due_date: "2026-11-10", priority: "high", category_id: null });
     const li = box.closest("li")!;
     expect(within(li).getByText(/2026-11-10/)).toBeInTheDocument();
     expect(within(li).getByText(/สูง/)).toBeInTheDocument();
@@ -172,7 +190,7 @@ describe("App", () => {
     await user.type(screen.getByLabelText("ชื่องาน"), "ธรรมดา");
     await user.click(screen.getByRole("button", { name: "เพิ่ม" }));
     await screen.findByRole("checkbox", { name: "ธรรมดา" });
-    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ title: "ธรรมดา", due_date: null, priority: "medium" });
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ title: "ธรรมดา", due_date: null, priority: "medium", category_id: null });
   });
 
   it("แก้วันที่และความสำคัญ → PATCH ถูก", async () => {
@@ -185,7 +203,7 @@ describe("App", () => {
     await user.selectOptions(within(li).getByLabelText("ความสำคัญ"), "low");
     await user.click(within(li).getByRole("button", { name: "บันทึก" }));
     await vi.waitFor(() => expect(within(screen.getAllByRole("listitem")[0]).getByText(/2026-11-20/)).toBeInTheDocument());
-    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ title: "ซื้อนม", due_date: "2026-11-20", priority: "low" });
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ title: "ซื้อนม", due_date: "2026-11-20", priority: "low", category_id: null });
   });
 
   it("ล้างช่องวันที่ตอนแก้ → PATCH due_date: null", async () => {
@@ -200,5 +218,63 @@ describe("App", () => {
     await user.click(within(li).getByRole("button", { name: "บันทึก" }));
     await vi.waitFor(() => expect(screen.getAllByRole("listitem")[1]).not.toHaveTextContent("2026-12-01"));
     expect(calls.find((c) => c.method === "PATCH")?.body).toMatchObject({ due_date: null });
+  });
+
+  it("เพิ่ม todo โดยเลือกหมวด → body มี category_id และรายการแสดงชื่อหมวด", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    await user.type(screen.getByLabelText("ชื่องาน"), "งานในหมวด");
+    await user.selectOptions(screen.getByLabelText("หมวด"), "งาน");
+    await user.click(screen.getByRole("button", { name: "เพิ่ม" }));
+    const li = (await screen.findByRole("checkbox", { name: "งานในหมวด" })).closest("li")!;
+    expect(calls.find((c) => c.method === "POST" && c.url === "/api/todos")?.body).toMatchObject({ category_id: 1 });
+    expect(li).toHaveTextContent("หมวด: งาน");
+  });
+
+  it("เลือก ไม่มีหมวด → category_id เป็น null", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    await user.type(screen.getByLabelText("ชื่องาน"), "ไม่มีหมวด");
+    await user.click(screen.getByRole("button", { name: "เพิ่ม" }));
+    expect(await screen.findByRole("checkbox", { name: "ไม่มีหมวด" })).toBeInTheDocument();
+    expect(calls.find((c) => c.method === "POST" && c.url === "/api/todos")?.body.category_id).toBeNull();
+  });
+
+  it("แก้ todo เปลี่ยนหมวด → PATCH category_id", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const li = (await screen.findByRole("checkbox", { name: "ซื้อนม" })).closest("li")!;
+    await user.click(within(li).getByRole("button", { name: "แก้ไข" }));
+    await user.selectOptions(within(li).getByLabelText("หมวด"), "งาน");
+    await user.click(within(li).getByRole("button", { name: "บันทึก" }));
+    expect(await within(li).findByText(/หมวด: งาน/)).toBeInTheDocument();
+    expect(calls.find((c) => c.method === "PATCH")?.body).toMatchObject({ category_id: 1 });
+  });
+
+  it("ลบหมวด → โหลดใหม่ และ todo ที่เคยอยู่แสดง ไม่มีหมวด", async () => {
+    items[0].category_id = 1;
+    const user = userEvent.setup();
+    render(<App />);
+    const li = (await screen.findByRole("checkbox", { name: "ซื้อนม" })).closest("li")!;
+    expect(li).toHaveTextContent("หมวด: งาน");
+    await user.click(screen.getByRole("button", { name: "ลบหมวด" }));
+    await waitFor(() => expect(li).toHaveTextContent("ไม่มีหมวด"));
+    expect(li).not.toHaveTextContent("หมวด: งาน");
+  });
+
+  it("เปลี่ยนชื่อหมวด → ชื่อบน todo เปลี่ยนทันที", async () => {
+    items[0].category_id = 1;
+    const user = userEvent.setup();
+    render(<App />);
+    const li = (await screen.findByRole("checkbox", { name: "ซื้อนม" })).closest("li")!;
+    await user.click(screen.getByRole("button", { name: "เปลี่ยนชื่อ" }));
+    const edit = screen.getByLabelText("ชื่อใหม่ของ งาน");
+    await user.clear(edit);
+    await user.type(edit, "งานด่วน");
+    await user.click(screen.getByRole("button", { name: "บันทึก" }));
+    expect(await screen.findByText(/หมวด: งานด่วน/)).toBeInTheDocument();
+    expect(li).toBeTruthy();
   });
 });

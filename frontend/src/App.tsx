@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ApiError, createTodo, deleteTodo, listTodos, updateTodo, type Todo } from "./api";
+import { ApiError, createTodo, deleteTodo, listCategories, listTodos, updateTodo, type Category, type Todo } from "./api";
+import Categories from "./Categories";
 import "./App.css";
 
 const PRIORITY_TH = { low: "ต่ำ", medium: "ปานกลาง", high: "สูง" } as const;
@@ -29,7 +30,24 @@ function DueAndPriority(props: {
   );
 }
 
+function CategorySelect(props: { id: string; categories: Category[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <>
+      <label htmlFor={props.id}>หมวด</label>
+      <select id={props.id} value={props.value} onChange={(e) => props.onChange(e.target.value)}>
+        <option value="">ไม่มีหมวด</option>
+        {props.categories.map((c) => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
+    </>
+  );
+}
+
 export default function App() {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryId, setCategoryId] = useState("");
+  const [editCategoryId, setEditCategoryId] = useState("");
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -55,27 +73,45 @@ export default function App() {
     }
   }
 
+  const reload = () =>
+    run(async () => {
+      const [c, t] = await Promise.all([listCategories(), listTodos()]);
+      setCategories(c);
+      setTodos(t);
+    });
+
   useEffect(() => {
-    run(async () => setTodos(await listTodos())).finally(() => setLoading(false));
+    reload().finally(() => setLoading(false));
   }, []);
+
+  const categoryName = (id: number | null) => {
+    const c = categories.find((x) => x.id === id);
+    return c ? `หมวด: ${c.name}` : "ไม่มีหมวด";
+  };
 
   const replace = (t: Todo) => setTodos((list) => list.map((x) => (x.id === t.id ? t : x)));
 
   const add = (e: FormEvent) => {
     e.preventDefault();
     return run(async () => {
-      const t = await createTodo({ title, due_date: due || null, priority });
+      const t = await createTodo({ title, due_date: due || null, priority, category_id: categoryId ? Number(categoryId) : null });
       setTodos((list) => [...list, t]);
       setTitle("");
       setDue("");
       setPriority("medium");
+      setCategoryId("");
     });
   };
 
   const save = (e: FormEvent, id: number) => {
     e.preventDefault();
     return run(async () => {
-      replace(await updateTodo(id, { title: editTitle, due_date: editDue || null, priority: editPriority }));
+      replace(await updateTodo(id, {
+        title: editTitle,
+        due_date: editDue || null,
+        priority: editPriority,
+        category_id: editCategoryId ? Number(editCategoryId) : null,
+      }));
       setEditingId(null);
     });
   };
@@ -87,9 +123,11 @@ export default function App() {
         <label htmlFor="new-title">ชื่องาน</label>
         <input id="new-title" value={title} onChange={(e) => setTitle(e.target.value)} />
         <DueAndPriority idPrefix="new" due={due} priority={priority} onDue={setDue} onPriority={setPriority} />
+        <CategorySelect id="new-category-select" categories={categories} value={categoryId} onChange={setCategoryId} />
         <button type="submit" disabled={busy || title.trim() === ""}>เพิ่ม</button>
       </form>
       {error && <p role="alert">{error}</p>}
+      <Categories categories={categories} onChange={reload} />
       {loading ? (
         <p>กำลังโหลด…</p>
       ) : (
@@ -100,6 +138,7 @@ export default function App() {
                 <form className="row" onSubmit={(e) => save(e, t.id)}>
                   <input aria-label={`แก้ชื่อ ${t.title}`} value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
                   <DueAndPriority idPrefix={`edit-${t.id}`} due={editDue} priority={editPriority} onDue={setEditDue} onPriority={setEditPriority} />
+                  <CategorySelect id={`edit-${t.id}-category`} categories={categories} value={editCategoryId} onChange={setEditCategoryId} />
                   <button type="submit" disabled={busy}>บันทึก</button>
                 </form>
               ) : (
@@ -114,9 +153,9 @@ export default function App() {
                     <span>{t.title}</span>
                   </label>
                   <small>
-                    {t.due_date && <>ครบกำหนด {t.due_date} · </>}ความสำคัญ: {PRIORITY_TH[t.priority]}
+                    {t.due_date && <>ครบกำหนด {t.due_date} · </>}ความสำคัญ: {PRIORITY_TH[t.priority]} · {categoryName(t.category_id)}
                   </small>
-                  <button type="button" disabled={busy} onClick={() => { setEditingId(t.id); setEditTitle(t.title); setEditDue(t.due_date ?? ""); setEditPriority(t.priority); }}>
+                  <button type="button" disabled={busy} onClick={() => { setEditingId(t.id); setEditTitle(t.title); setEditDue(t.due_date ?? ""); setEditPriority(t.priority); setEditCategoryId(t.category_id === null ? "" : String(t.category_id)); }}>
                     แก้ไข
                   </button>
                   <button

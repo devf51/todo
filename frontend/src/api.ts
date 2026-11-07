@@ -7,6 +7,8 @@ export type Todo = {
   category_id: number | null;
 };
 
+export type Category = { id: number; name: string };
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -34,9 +36,14 @@ async function request<T>(path: string, method = "GET", body?: unknown): Promise
 
 export const listTodos = () => request<Todo[]>("/todos");
 type Priority = Todo["priority"];
-type Fields = { due_date?: string | null; priority?: Priority };
+type Fields = { due_date?: string | null; priority?: Priority; category_id?: number | null };
 
 export const createTodo = (input: { title: string } & Fields) => request<Todo>("/todos", "POST", input);
 export const updateTodo = (id: number, patch: { title?: string; done?: boolean } & Fields) =>
   request<Todo>(`/todos/${id}`, "PATCH", patch);
 export const deleteTodo = (id: number) => request<void>(`/todos/${id}`, "DELETE");
+
+export const listCategories = () => request<Category[]>("/categories");
+export const createCategory = (name: string) => request<Category>("/categories", "POST", { name });
+export const renameCategory = (id: number, name: string) => request<Category>(`/categories/${id}`, "PATCH", { name });
+export const deleteCategory = (id: number) => request<void>(`/categories/${id}`, "DELETE");
