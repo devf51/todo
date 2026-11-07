@@ -48,3 +48,9 @@ jobs:
       - run: cd frontend && npm ci
       - run: cd e2e && npm ci && npx playwright install --with-deps chromium
       - run: cd e2e && npx playwright test --pass-with-no-tests
+
+  docker:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - run: docker compose build

@@ -1,0 +1,11 @@
+.git
+.github
+docs
+e2e
+**/.venv
+**/node_modules
+**/dist
+**/*.db
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
