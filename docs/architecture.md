@@ -50,6 +50,7 @@ security: yes
 | backend | pytest | 9.2.0 |
 | backend | httpx (สำหรับ TestClient) | 0.28.1 |
 | backend | ruff | 0.17.4 |
+| backend | pip-audit | 2.10.1 |
 | frontend / e2e | Node.js | 24.22.2 LTS (Docker `node:24-slim`) |
 | frontend | react, react-dom | 19.3.1 |
 | frontend | @types/react, @types/react-dom | 19.3.0 |
@@ -80,7 +81,7 @@ security: yes
 ```
 backend/
   requirements.txt        runtime deps (pin)
-  requirements-dev.txt    -r requirements.txt + pytest, httpx, ruff (pin)
+  requirements-dev.txt    -r requirements.txt + pytest, httpx, ruff, pip-audit (pin)
   pyproject.toml          config ของ pytest (pythonpath = ["."]) และ ruff
   app/
     __init__.py
@@ -135,7 +136,7 @@ CREATE TABLE IF NOT EXISTS todos (
 
 # API หลัก
 
-ทุก response เป็น JSON · error ใช้รูปแบบของ FastAPI `{"detail": ...}` (422 จาก validation, `detail` เป็นรายการ) · id ใน path ต้องเป็น int ไม่ใช่ → 422
+ทุก response เป็น JSON · error ใช้รูปแบบของ FastAPI `{"detail": ...}` (422 จาก validation, `detail` เป็นรายการ) · id ใน path และ `category_id` (query / body) ต้องเป็น int ในช่วง 1..9223372036854775807 ไม่งั้น → 422 (เลขเกิน int64 ทำให้ `sqlite3` โยน `OverflowError`) · PATCH: `title` / `done` / `priority` เป็น `null` → 422, body `{}` → 200 ค่าเดิม
 
 `Todo = {id: int, title: string, done: bool, due_date: string|null, priority: "low"|"medium"|"high", category_id: int|null}` · `Category = {id: int, name: string}`
 
@@ -155,17 +156,18 @@ CREATE TABLE IF NOT EXISTS todos (
 
 - **authentication / authorization:** ไม่มี ทุกคนบน internet ที่รู้ URL อ่าน / แก้ / ลบได้ทุกอย่าง ผู้ใช้ยอมรับใน spec (ข้อจำกัด) · CSRF ไม่เป็นประเด็นเพราะไม่มี session ให้ขโมย
 - **ข้อมูลอ่อนไหว:** ไม่มีตามที่ผู้ใช้ยอมรับ (ข้อมูลเป็นสาธารณะโดยปริยาย) · ไม่มี secret ในระบบ ไม่มีไฟล์ `.env`
-- **input เข้ามาทาง:** JSON body, query string, path id ของ `/api/*` → validate ด้วย pydantic ทุกตัว (ความยาว, enum, รูปแบบวันที่จริง, ชนิดข้อมูล) ก่อนถึง DB · SQL ใช้ placeholder `?` เท่านั้น ห้ามประกอบ SQL จาก input (ORDER BY เป็นค่าคงที่)
+- **input เข้ามาทาง:** JSON body, query string, path id ของ `/api/*` → validate ด้วย pydantic ทุกตัว (ความยาว, enum, รูปแบบวันที่จริง, ชนิดข้อมูล) ก่อนถึง DB · SQL ใช้ placeholder `?` เท่านั้น ห้ามประกอบ SQL จาก input (ORDER BY เป็นค่าคงที่, ชื่อคอลัมน์ใน `UPDATE ... SET` และเงื่อนไข `WHERE` ของตัวกรองมาจาก whitelist คงที่ในโค้ด ไม่ใช่ key จาก body / query)
 - **output:** frontend แสดงข้อความผ่าน JSX ปกติเท่านั้น ห้ามใช้ `dangerouslySetInnerHTML` (กัน stored XSS เพราะใครก็เขียนข้อมูลได้)
 - **CORS:** ไม่เปิด (หน้าเว็บกับ API origin เดียวกัน)
-- **container:** รันเป็น user ที่ไม่ใช่ root · เปิดแค่ port 8000 · HTTPS / reverse proxy / จำกัดขนาด body ผู้ใช้ตั้งบน VPS เอง README แนะนำค่า
-- **ความเสี่ยงที่ยอมรับ:** ไม่มี rate limit / เพดานจำนวนข้อมูล (อยู่ใน "ข้อเสนอเพิ่มเติม" ของ spec) · หน้า `/docs` ของ FastAPI เปิดสาธารณะ
+- **container:** รันเป็น user ที่ไม่ใช่ root · compose bind `127.0.0.1:8000` เท่านั้น ให้ reverse proxy ของผู้ใช้เป็นทางเข้าเดียว · HTTPS และจำกัดขนาด body (แนะนำ 64 KB) ตั้งที่ proxy README มีตัวอย่าง Caddy / nginx
+- **CI / dependency:** workflow ใช้ `permissions: contents: read` · CI รัน `pip-audit -r requirements.txt` และ `npm audit --omit=dev`
+- **ความเสี่ยงที่ยอมรับ:** ไม่มี rate limit / เพดานจำนวนข้อมูล (อยู่ใน "ข้อเสนอเพิ่มเติม" ของ spec) · หน้า `/docs` ของ FastAPI เปิดสาธารณะ · base image ใช้ tag ไม่ pin digest
 
 # Error
 
 | เกิดอะไร | ระบบทำอะไร |
 |----------|-------------|
-| input ไม่ผ่าน validation (ชื่อว่าง / ยาวเกิน, วันที่ผิด, priority / status ผิด, ชนิดผิด) | 422 `{detail: [...]}` ไม่แตะ DB |
+| input ไม่ผ่าน validation (ชื่อว่าง / ยาวเกิน, วันที่ผิด, priority / status ผิด, ชนิดผิด, id นอกช่วง int64, `null` ใน field ที่ห้าม null) | 422 `{detail: [...]}` ไม่แตะ DB |
 | id ของ todo / หมวดไม่มี | 404 `{detail: "todo not found"}` / `{detail: "category not found"}` |
 | `category_id` ใน body ของ todo ชี้หมวดที่ไม่มี | 422 `{detail: "category not found"}` |
 | ชื่อหมวดซ้ำ (สร้าง / เปลี่ยนชื่อ) | 409 `{detail: "category name already exists"}` (จับ `sqlite3.IntegrityError` ของ UNIQUE) |
@@ -192,4 +194,5 @@ CREATE TABLE IF NOT EXISTS todos (
 - ไม่มีงาน programmer: ทุกส่วนเป็น service หรือหน้าเว็บ
 - qa: yes เพราะมี backend + frontend ต้องทำงานด้วยกัน และมีหน้าจอให้ผู้ใช้กด
 - security: yes เพราะรับ input จาก network และเปิดบน internet โดยไม่มี login (ใครก็เขียนข้อมูลได้ → ต้องตรวจ validation, SQL injection, stored XSS, container)
+- รับข้อ "ควรแก้" จากตรวจ design รอบ 1 (ผล: ผ่าน) เข้าแผนก่อนอนุมัติ: ช่วง id 1..2^63-1 (T2 / T6 / T8), PATCH `null` / `{}` + whitelist คอลัมน์ (T2 / T4), compose bind `127.0.0.1` + ตัวอย่าง proxy จำกัด body 64 KB (T11), CI `permissions: contents: read` + `pip-audit` / `npm audit` (T1) · ไม่รับ: pin digest ของ base image (เพิ่มภาระอัปเดต ผู้ใช้คนเดียว)
 - checkpoint F1 เพราะเล็กที่สุดที่เห็นทั้งทาง: API + DB + หน้าเว็บ ครบหนึ่งรอบ
