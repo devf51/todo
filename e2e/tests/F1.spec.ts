@@ -25,17 +25,26 @@ test.describe("F1 API", () => {
     ["over 200 chars", "ก".repeat(201)],
   ] as const) {
     test(`POST /api/todos with title ${name} returns 422 and count unchanged`, async ({ request }) => {
-      const before = (await (await request.get("/api/todos")).json()).length;
+      // ไฟล์เทสต์รันขนานกันบน DB เดียว จึงเทียบจำนวนรายการที่มี title นี้ ไม่ใช่จำนวนทั้งหมด
+      const same = async () =>
+        ((await (await request.get("/api/todos")).json()) as Todo[]).filter((x) => x.title === title).length;
+      const before = await same();
       const res = await request.post("/api/todos", { data: { title } });
       expect(res.status()).toBe(422);
-      const after = (await (await request.get("/api/todos")).json()).length;
-      expect(after).toBe(before);
+      expect(await same()).toBe(before);
     });
   }
 
   test("POST /api/todos accepts title of exactly 200 chars", async ({ request }) => {
     const res = await request.post("/api/todos", { data: { title: "ก".repeat(200) } });
     expect(res.status()).toBe(201);
+  });
+
+  test("concurrent POST /api/todos all return 201", async ({ request }) => {
+    const rs = await Promise.all(
+      Array.from({ length: 30 }, (_, i) => request.post("/api/todos", { data: { title: `conc-${i}` } })),
+    );
+    expect(rs.map((r) => r.status())).toEqual(Array(30).fill(201));
   });
 
   test("PATCH /api/todos/{id} toggles done and changes title", async ({ request }) => {
