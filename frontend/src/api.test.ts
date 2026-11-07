@@ -6,7 +6,7 @@ import {
 const todo = { id: 1, title: "a", done: false, due_date: null, priority: "medium", category_id: null };
 
 function mockFetch(status: number, body?: unknown) {
-  const f = vi.fn().mockResolvedValue(
+  const f = vi.fn().mockImplementation(async () =>
     new Response(body === undefined ? null : JSON.stringify(body), { status }),
   );
   vi.stubGlobal("fetch", f);
@@ -100,5 +100,24 @@ describe("api", () => {
     expect(f.mock.calls[0][1]?.body).toBe('{"title":"a","category_id":3}');
     await updateTodo(1, { category_id: null });
     expect(f.mock.calls[1][1]?.body).toBe('{"category_id":null}');
+  });
+
+  it("listTodos ไม่มีตัวกรอง → ไม่มี query", async () => {
+    const f = mockFetch(200, []);
+    await listTodos();
+    await listTodos({});
+    expect(f.mock.calls.map((c) => c[0])).toEqual(["/api/todos", "/api/todos"]);
+  });
+
+  it("listTodos ส่งตัวกรองครบ 3 ตัว", async () => {
+    const f = mockFetch(200, []);
+    await listTodos({ status: "active", category_id: 3, priority: "high" });
+    expect(f.mock.calls[0][0]).toBe("/api/todos?status=active&category_id=3&priority=high");
+  });
+
+  it("listTodos ไม่ส่ง status=all", async () => {
+    const f = mockFetch(200, []);
+    await listTodos({ status: "all", priority: "low" });
+    expect(f.mock.calls[0][0]).toBe("/api/todos?priority=low");
   });
 });

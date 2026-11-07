@@ -34,8 +34,16 @@ async function request<T>(path: string, method = "GET", body?: unknown): Promise
   return res.status === 204 ? (undefined as T) : res.json();
 }
 
-export const listTodos = () => request<Todo[]>("/todos");
 type Priority = Todo["priority"];
+export type TodoFilters = { status?: "all" | "active" | "done"; category_id?: number; priority?: Priority };
+
+export const listTodos = (filters: TodoFilters = {}) => {
+  const q = new URLSearchParams();
+  if (filters.status && filters.status !== "all") q.set("status", filters.status);
+  if (filters.category_id !== undefined) q.set("category_id", String(filters.category_id));
+  if (filters.priority) q.set("priority", filters.priority);
+  return request<Todo[]>(`/todos${q.size ? `?${q}` : ""}`);
+};
 type Fields = { due_date?: string | null; priority?: Priority; category_id?: number | null };
 
 export const createTodo = (input: { title: string } & Fields) => request<Todo>("/todos", "POST", input);

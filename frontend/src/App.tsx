@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ApiError, createTodo, deleteTodo, listCategories, listTodos, updateTodo, type Category, type Todo } from "./api";
+import { ApiError, createTodo, deleteTodo, listCategories, listTodos, updateTodo, type Category, type Todo, type TodoFilters } from "./api";
 import Categories from "./Categories";
+import Filters from "./Filters";
 import "./App.css";
 
 const PRIORITY_TH = { low: "ต่ำ", medium: "ปานกลาง", high: "สูง" } as const;
@@ -48,6 +49,7 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryId, setCategoryId] = useState("");
   const [editCategoryId, setEditCategoryId] = useState("");
+  const [filters, setFilters] = useState<TodoFilters>({});
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -73,29 +75,28 @@ export default function App() {
     }
   }
 
-  const reload = () =>
-    run(async () => {
-      const [c, t] = await Promise.all([listCategories(), listTodos()]);
-      setCategories(c);
-      setTodos(t);
-    });
+  // โหลดหมวดและรายการด้วยตัวกรองปัจจุบัน; ใช้หลังทุกการเปลี่ยนแปลงเพื่อให้รายการตรงตัวกรองเสมอ
+  const fetchAll = async () => {
+    const [c, t] = await Promise.all([listCategories(), listTodos(filters)]);
+    setCategories(c);
+    setTodos(t);
+  };
+  const reload = () => run(fetchAll);
 
   useEffect(() => {
     reload().finally(() => setLoading(false));
-  }, []);
+  }, [filters]);
 
   const categoryName = (id: number | null) => {
     const c = categories.find((x) => x.id === id);
     return c ? `หมวด: ${c.name}` : "ไม่มีหมวด";
   };
 
-  const replace = (t: Todo) => setTodos((list) => list.map((x) => (x.id === t.id ? t : x)));
-
   const add = (e: FormEvent) => {
     e.preventDefault();
     return run(async () => {
-      const t = await createTodo({ title, due_date: due || null, priority, category_id: categoryId ? Number(categoryId) : null });
-      setTodos((list) => [...list, t]);
+      await createTodo({ title, due_date: due || null, priority, category_id: categoryId ? Number(categoryId) : null });
+      await fetchAll();
       setTitle("");
       setDue("");
       setPriority("medium");
@@ -106,12 +107,13 @@ export default function App() {
   const save = (e: FormEvent, id: number) => {
     e.preventDefault();
     return run(async () => {
-      replace(await updateTodo(id, {
+      await updateTodo(id, {
         title: editTitle,
         due_date: editDue || null,
         priority: editPriority,
         category_id: editCategoryId ? Number(editCategoryId) : null,
-      }));
+      });
+      await fetchAll();
       setEditingId(null);
     });
   };
@@ -127,6 +129,7 @@ export default function App() {
         <button type="submit" disabled={busy || title.trim() === ""}>เพิ่ม</button>
       </form>
       {error && <p role="alert">{error}</p>}
+      <Filters value={filters} categories={categories} onChange={setFilters} />
       <Categories categories={categories} onChange={reload} />
       {loading ? (
         <p>กำลังโหลด…</p>
@@ -148,7 +151,7 @@ export default function App() {
                       type="checkbox"
                       checked={t.done}
                       disabled={busy}
-                      onChange={() => run(async () => replace(await updateTodo(t.id, { done: !t.done })))}
+                      onChange={() => run(async () => { await updateTodo(t.id, { done: !t.done }); await fetchAll(); })}
                     />
                     <span>{t.title}</span>
                   </label>
@@ -161,7 +164,7 @@ export default function App() {
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => run(async () => { await deleteTodo(t.id); setTodos((l) => l.filter((x) => x.id !== t.id)); })}
+                    onClick={() => run(async () => { await deleteTodo(t.id); await fetchAll(); })}
                   >
                     ลบ
                   </button>

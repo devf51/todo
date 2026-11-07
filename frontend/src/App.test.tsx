@@ -42,8 +42,14 @@ beforeEach(() => {
         items.forEach((i) => { if (i.category_id === cid) i.category_id = null; });
         return json(204);
       }
-      const id = Number(url.split("/")[3]);
-      if (method === "GET") return json(200, items);
+      const id = Number(url.split("?")[0].split("/")[3]);
+      if (method === "GET") {
+        const q = new URL(url, "http://x").searchParams;
+        return json(200, items.filter((i) =>
+          (!q.get("status") || q.get("status") === "all" || (q.get("status") === "done") === i.done) &&
+          (!q.get("priority") || q.get("priority") === i.priority) &&
+          (!q.get("category_id") || Number(q.get("category_id")) === i.category_id)));
+      }
       if (method === "POST") {
         const t = mk(items.length + 10, body.title, false, { due_date: body.due_date ?? null, priority: body.priority ?? "medium", category_id: body.category_id ?? null });
         items.push(t);
@@ -276,5 +282,40 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "บันทึก" }));
     expect(await screen.findByText(/หมวด: งานด่วน/)).toBeInTheDocument();
     expect(li).toBeTruthy();
+  });
+
+  it("เลือก ยังไม่เสร็จ → GET ?status=active และรายการเปลี่ยน", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ส่งงาน" });
+    await user.selectOptions(screen.getByLabelText("สถานะ"), "ยังไม่เสร็จ");
+    await waitFor(() => expect(screen.queryByRole("checkbox", { name: "ส่งงาน" })).not.toBeInTheDocument());
+    expect(screen.getByRole("checkbox", { name: "ซื้อนม" })).toBeInTheDocument();
+    expect(calls.at(-1)?.url).toBe("/api/todos?status=active");
+  });
+
+  it("เลือกหลายตัวกรอง → query ครบ แล้วกลับเป็น ทั้งหมด → ไม่ส่ง query นั้น", async () => {
+    items[1].category_id = 1;
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ส่งงาน" });
+    await user.selectOptions(screen.getByLabelText("กรองหมวด"), "งาน");
+    await user.selectOptions(screen.getByLabelText("กรองความสำคัญ"), "สูง");
+    await waitFor(() => expect(calls.at(-1)?.url).toBe("/api/todos?category_id=1&priority=high"));
+    expect(screen.queryByRole("checkbox", { name: "ซื้อนม" })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("กรองหมวด"), "ทั้งหมด");
+    await waitFor(() => expect(calls.at(-1)?.url).toBe("/api/todos?priority=high"));
+  });
+
+  it("เพิ่ม todo ที่ไม่ตรงตัวกรอง → ไม่แสดงในรายการที่กรองอยู่ (โหลดใหม่ด้วยตัวกรองเดิม)", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    await user.selectOptions(screen.getByLabelText("กรองความสำคัญ"), "สูง");
+    await waitFor(() => expect(screen.queryByRole("checkbox", { name: "ซื้อนม" })).not.toBeInTheDocument());
+    await user.type(screen.getByLabelText("ชื่องาน"), "งานปกติ");
+    await user.click(screen.getByRole("button", { name: "เพิ่ม" }));
+    await waitFor(() => expect(calls.at(-1)?.url).toBe("/api/todos?priority=high"));
+    expect(screen.queryByRole("checkbox", { name: "งานปกติ" })).not.toBeInTheDocument();
   });
 });
