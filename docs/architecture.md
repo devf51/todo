@@ -195,4 +195,5 @@ CREATE TABLE IF NOT EXISTS todos (
 - qa: yes เพราะมี backend + frontend ต้องทำงานด้วยกัน และมีหน้าจอให้ผู้ใช้กด
 - security: yes เพราะรับ input จาก network และเปิดบน internet โดยไม่มี login (ใครก็เขียนข้อมูลได้ → ต้องตรวจ validation, SQL injection, stored XSS, container)
 - รับข้อ "ควรแก้" จากตรวจ design รอบ 1 (ผล: ผ่าน) เข้าแผนก่อนอนุมัติ: ช่วง id 1..2^63-1 (T2 / T6 / T8), PATCH `null` / `{}` + whitelist คอลัมน์ (T2 / T4), compose bind `127.0.0.1` + ตัวอย่าง proxy จำกัด body 64 KB (T11), CI `permissions: contents: read` + `pip-audit` / `npm audit` (T1) · ไม่รับ: pin digest ของ base image (เพิ่มภาระอัปเดต ผู้ใช้คนเดียว)
+- เก็บโค้ดที่ GitHub `https://github.com/devf51/todo` (public, ผู้ใช้ระบุ) · CI จึงใช้ GitHub Actions ตาม T1 · การเพิ่ม remote / push / merge เข้า `main` ผู้ใช้หรือขั้น release ของ devops ทำ
 - checkpoint F1 เพราะเล็กที่สุดที่เห็นทั้งทาง: API + DB + หน้าเว็บ ครบหนึ่งรอบ
