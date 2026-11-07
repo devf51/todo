@@ -93,3 +93,59 @@ def test_data_persists_across_app_instances(tmp_path):
     path = str(tmp_path / "p.db")
     t = make(TestClient(create_app(path))).json()
     assert TestClient(create_app(path)).get("/api/todos").json() == [t]
+
+
+def test_create_with_due_date_and_priority(client):
+    r = client.post("/api/todos", json={"title": "x", "due_date": "2026-12-31", "priority": "high"})
+    assert r.status_code == 201
+    assert r.json()["due_date"] == "2026-12-31" and r.json()["priority"] == "high"
+
+
+def test_defaults_when_omitted(client):
+    t = make(client).json()
+    assert t["due_date"] is None and t["priority"] == "medium"
+
+
+@pytest.mark.parametrize("bad", ["31/12/2026", "2026-02-30", 20261231, "2026-12-31T00:00:00"])
+def test_invalid_due_date_422(client, bad):
+    r = client.post("/api/todos", json={"title": "x", "due_date": bad})
+    assert r.status_code == 422
+    assert client.get("/api/todos").json() == []
+
+
+def test_invalid_priority_422(client):
+    assert client.post("/api/todos", json={"title": "x", "priority": "urgent"}).status_code == 422
+
+
+def test_patch_due_date_and_priority(client):
+    t = make(client).json()
+    r = client.patch(f"/api/todos/{t['id']}", json={"due_date": "2027-01-02", "priority": "low"})
+    assert r.status_code == 200
+    assert r.json()["due_date"] == "2027-01-02" and r.json()["priority"] == "low"
+    assert client.get("/api/todos").json()[0]["priority"] == "low"
+
+
+def test_patch_due_date_null_clears(client):
+    t = client.post("/api/todos", json={"title": "x", "due_date": "2026-12-31"}).json()
+    r = client.patch(f"/api/todos/{t['id']}", json={"due_date": None})
+    assert r.status_code == 200 and r.json()["due_date"] is None
+
+
+def test_patch_without_due_date_keeps_value(client):
+    t = client.post("/api/todos", json={"title": "x", "due_date": "2026-12-31"}).json()
+    r = client.patch(f"/api/todos/{t['id']}", json={"done": True})
+    assert r.json()["due_date"] == "2026-12-31"
+
+
+def test_patch_priority_null_422(client):
+    t = make(client).json()
+    assert client.patch(f"/api/todos/{t['id']}", json={"priority": None}).status_code == 422
+
+
+def test_list_sorted_by_due_date_nulls_last(client):
+    def add(title, due):
+        return client.post("/api/todos", json={"title": title, "due_date": due}).json()["title"]
+
+    for title, due in [("none", None), ("late", "2027-01-01"), ("soon", "2026-01-01"), ("soon2", "2026-01-01")]:
+        add(title, due)
+    assert [t["title"] for t in client.get("/api/todos").json()] == ["soon", "soon2", "late", "none"]
