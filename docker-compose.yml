@@ -1,0 +1,11 @@
+services:
+  todo:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - todo-data:/data
+    restart: unless-stopped
+
+volumes:
+  todo-data:
