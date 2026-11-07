@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
-type T = { id: number; title: string; done: boolean; due_date: null; priority: "medium"; category_id: null };
-const mk = (id: number, title: string, done = false): T => ({ id, title, done, due_date: null, priority: "medium", category_id: null });
+type T = { id: number; title: string; done: boolean; due_date: string | null; priority: "low" | "medium" | "high"; category_id: null };
+const mk = (id: number, title: string, done = false, extra: Partial<T> = {}): T => ({ id, title, done, due_date: null, priority: "medium", category_id: null, ...extra });
 
 let items: T[];
 let fail: { method: string; status: number; detail?: unknown } | null;
@@ -14,7 +14,7 @@ const json = (status: number, body?: unknown) =>
   new Response(body === undefined ? null : JSON.stringify(body), { status });
 
 beforeEach(() => {
-  items = [mk(1, "ซื้อนม"), mk(2, "ส่งงาน", true)];
+  items = [mk(1, "ซื้อนม"), mk(2, "ส่งงาน", true, { due_date: "2026-12-01", priority: "high" })];
   fail = null;
   calls = [];
   vi.stubGlobal(
@@ -27,7 +27,7 @@ beforeEach(() => {
       const id = Number(url.split("/")[3]);
       if (method === "GET") return json(200, items);
       if (method === "POST") {
-        const t = mk(items.length + 10, body.title);
+        const t = mk(items.length + 10, body.title, false, { due_date: body.due_date ?? null, priority: body.priority ?? "medium" });
         items.push(t);
         return json(201, t);
       }
@@ -68,7 +68,7 @@ describe("App", () => {
     await user.click(add);
     expect(await screen.findByRole("checkbox", { name: "งานใหม่" })).toBeInTheDocument();
     expect(input).toHaveValue("");
-    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ title: "งานใหม่" });
+    expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({ title: "งานใหม่" });
   });
 
   it("เพิ่มแล้ว 422 → alert, รายการไม่เพิ่ม, ช่องยังมีค่า", async () => {
@@ -138,5 +138,67 @@ describe("App", () => {
     await user.click(within(screen.getAllByRole("listitem")[0]).getByRole("button", { name: "ลบ" }));
     await vi.waitFor(() => expect(screen.queryByRole("checkbox", { name: "ซื้อนม" })).not.toBeInTheDocument());
     expect(calls.find((c) => c.method === "DELETE")?.url).toBe("/api/todos/1");
+  });
+
+  it("แสดงวันกำหนดส่งและความสำคัญบนรายการ; ไม่มีวันที่ก็ไม่แสดง", async () => {
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    const [a, b] = screen.getAllByRole("listitem");
+    expect(within(b).getByText(/2026-12-01/)).toBeInTheDocument();
+    expect(within(b).getByText(/สูง/)).toBeInTheDocument();
+    expect(within(a).queryByText(/ครบกำหนด/)).not.toBeInTheDocument();
+    expect(within(a).getByText(/ปานกลาง/)).toBeInTheDocument();
+  });
+
+  it("เพิ่มพร้อมวันที่และความสำคัญ → body ถูก และรายการแสดงทั้งสองค่า", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    await user.type(screen.getByLabelText("ชื่องาน"), "งานด่วน");
+    await user.type(screen.getByLabelText("วันกำหนดส่ง"), "2026-11-10");
+    await user.selectOptions(screen.getByLabelText("ความสำคัญ"), "high");
+    await user.click(screen.getByRole("button", { name: "เพิ่ม" }));
+    const box = await screen.findByRole("checkbox", { name: "งานด่วน" });
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ title: "งานด่วน", due_date: "2026-11-10", priority: "high" });
+    const li = box.closest("li")!;
+    expect(within(li).getByText(/2026-11-10/)).toBeInTheDocument();
+    expect(within(li).getByText(/สูง/)).toBeInTheDocument();
+  });
+
+  it("ไม่เลือกอะไร → ส่ง priority medium และ due_date null", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    await user.type(screen.getByLabelText("ชื่องาน"), "ธรรมดา");
+    await user.click(screen.getByRole("button", { name: "เพิ่ม" }));
+    await screen.findByRole("checkbox", { name: "ธรรมดา" });
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ title: "ธรรมดา", due_date: null, priority: "medium" });
+  });
+
+  it("แก้วันที่และความสำคัญ → PATCH ถูก", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    const li = screen.getAllByRole("listitem")[0];
+    await user.click(within(li).getByRole("button", { name: "แก้ไข" }));
+    await user.type(within(li).getByLabelText("วันกำหนดส่ง"), "2026-11-20");
+    await user.selectOptions(within(li).getByLabelText("ความสำคัญ"), "low");
+    await user.click(within(li).getByRole("button", { name: "บันทึก" }));
+    await vi.waitFor(() => expect(within(screen.getAllByRole("listitem")[0]).getByText(/2026-11-20/)).toBeInTheDocument());
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ title: "ซื้อนม", due_date: "2026-11-20", priority: "low" });
+  });
+
+  it("ล้างช่องวันที่ตอนแก้ → PATCH due_date: null", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("checkbox", { name: "ซื้อนม" });
+    const li = screen.getAllByRole("listitem")[1];
+    await user.click(within(li).getByRole("button", { name: "แก้ไข" }));
+    const date = within(li).getByLabelText("วันกำหนดส่ง");
+    expect(date).toHaveValue("2026-12-01");
+    await user.clear(date);
+    await user.click(within(li).getByRole("button", { name: "บันทึก" }));
+    await vi.waitFor(() => expect(screen.getAllByRole("listitem")[1]).not.toHaveTextContent("2026-12-01"));
+    expect(calls.find((c) => c.method === "PATCH")?.body).toMatchObject({ due_date: null });
   });
 });

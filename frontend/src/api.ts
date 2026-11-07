@@ -33,7 +33,10 @@ async function request<T>(path: string, method = "GET", body?: unknown): Promise
 }
 
 export const listTodos = () => request<Todo[]>("/todos");
-export const createTodo = (input: { title: string }) => request<Todo>("/todos", "POST", input);
-export const updateTodo = (id: number, patch: { title?: string; done?: boolean }) =>
+type Priority = Todo["priority"];
+type Fields = { due_date?: string | null; priority?: Priority };
+
+export const createTodo = (input: { title: string } & Fields) => request<Todo>("/todos", "POST", input);
+export const updateTodo = (id: number, patch: { title?: string; done?: boolean } & Fields) =>
   request<Todo>(`/todos/${id}`, "PATCH", patch);
 export const deleteTodo = (id: number) => request<void>(`/todos/${id}`, "DELETE");

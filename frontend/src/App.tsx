@@ -2,14 +2,45 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, createTodo, deleteTodo, listTodos, updateTodo, type Todo } from "./api";
 import "./App.css";
 
+const PRIORITY_TH = { low: "ต่ำ", medium: "ปานกลาง", high: "สูง" } as const;
+
+function DueAndPriority(props: {
+  due: string;
+  priority: Todo["priority"];
+  onDue: (v: string) => void;
+  onPriority: (v: Todo["priority"]) => void;
+  idPrefix: string;
+}) {
+  return (
+    <>
+      <label htmlFor={`${props.idPrefix}-due`}>วันกำหนดส่ง</label>
+      <input id={`${props.idPrefix}-due`} type="date" value={props.due} onChange={(e) => props.onDue(e.target.value)} />
+      <label htmlFor={`${props.idPrefix}-prio`}>ความสำคัญ</label>
+      <select
+        id={`${props.idPrefix}-prio`}
+        value={props.priority}
+        onChange={(e) => props.onPriority(e.target.value as Todo["priority"])}
+      >
+        {Object.entries(PRIORITY_TH).map(([v, th]) => (
+          <option key={v} value={v}>{th}</option>
+        ))}
+      </select>
+    </>
+  );
+}
+
 export default function App() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [title, setTitle] = useState("");
+  const [due, setDue] = useState("");
+  const [priority, setPriority] = useState<Todo["priority"]>("medium");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [editDue, setEditDue] = useState("");
+  const [editPriority, setEditPriority] = useState<Todo["priority"]>("medium");
 
   // เปลี่ยนจอหลัง server ตอบสำเร็จเท่านั้น; error → แสดง alert และคงค่าที่พิมพ์ไว้
   async function run(action: () => Promise<void>) {
@@ -33,16 +64,18 @@ export default function App() {
   const add = (e: FormEvent) => {
     e.preventDefault();
     return run(async () => {
-      const t = await createTodo({ title });
+      const t = await createTodo({ title, due_date: due || null, priority });
       setTodos((list) => [...list, t]);
       setTitle("");
+      setDue("");
+      setPriority("medium");
     });
   };
 
   const save = (e: FormEvent, id: number) => {
     e.preventDefault();
     return run(async () => {
-      replace(await updateTodo(id, { title: editTitle }));
+      replace(await updateTodo(id, { title: editTitle, due_date: editDue || null, priority: editPriority }));
       setEditingId(null);
     });
   };
@@ -53,6 +86,7 @@ export default function App() {
       <form className="row" onSubmit={add}>
         <label htmlFor="new-title">ชื่องาน</label>
         <input id="new-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <DueAndPriority idPrefix="new" due={due} priority={priority} onDue={setDue} onPriority={setPriority} />
         <button type="submit" disabled={busy || title.trim() === ""}>เพิ่ม</button>
       </form>
       {error && <p role="alert">{error}</p>}
@@ -65,6 +99,7 @@ export default function App() {
               {editingId === t.id ? (
                 <form className="row" onSubmit={(e) => save(e, t.id)}>
                   <input aria-label={`แก้ชื่อ ${t.title}`} value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+                  <DueAndPriority idPrefix={`edit-${t.id}`} due={editDue} priority={editPriority} onDue={setEditDue} onPriority={setEditPriority} />
                   <button type="submit" disabled={busy}>บันทึก</button>
                 </form>
               ) : (
@@ -78,7 +113,10 @@ export default function App() {
                     />
                     <span>{t.title}</span>
                   </label>
-                  <button type="button" disabled={busy} onClick={() => { setEditingId(t.id); setEditTitle(t.title); }}>
+                  <small>
+                    {t.due_date && <>ครบกำหนด {t.due_date} · </>}ความสำคัญ: {PRIORITY_TH[t.priority]}
+                  </small>
+                  <button type="button" disabled={busy} onClick={() => { setEditingId(t.id); setEditTitle(t.title); setEditDue(t.due_date ?? ""); setEditPriority(t.priority); }}>
                     แก้ไข
                   </button>
                   <button
