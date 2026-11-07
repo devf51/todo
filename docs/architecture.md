@@ -1,6 +1,6 @@
 branch: plan/todo-web
 plan: approved
-checkpoint: F1 pending
+checkpoint: F1 passed
 qa: yes
 security: yes
 
